@@ -19,6 +19,9 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 #include <Adafruit_NeoPixel.h>
+#ifdef __AVR__
+  #include <avr/power.h>
+#endif
 
   #include <CurieBLE.h>
   #include <BLEPeripheral.h>
@@ -37,6 +40,13 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 // And connect 2 DC motors to port M1 & M2 !
 Adafruit_DCMotor *L_MOTOR = AFMS.getMotor(1);
 Adafruit_DCMotor *R_MOTOR = AFMS.getMotor(2);
+
+// IR Sensors
+int leftSensor = A0;
+int rightSensor = A1;
+
+// State of robot (auto vs. manual)
+boolean autoMode = false;
 
 //not used, testing acceleration
 // int accelTime = 200;
@@ -69,6 +79,10 @@ char buf[60];
 /**************************************************************************/
 void setup(void)
 {
+
+  pinMode(leftSensor, INPUT);
+  pinMode(rightSensor, INPUT);
+  
   //while (!Serial);// For use only while plugged into USB an with Serial Monitor open
   AFMS.begin();  // create with the default frequency 1.6KHz
 
@@ -88,7 +102,16 @@ void setup(void)
   //setup the neopixel ring
   pixel.begin();
   pixel.setBrightness(128); //medium brightness
-  pixel.show();  
+
+  // Purple!
+  for (int i = 0; i < NUMPIXELS; i++) {
+
+    pixel.setPixelColor(i, pixel.Color(127, 0, 127));
+
+    delay(50);
+    pixel.show();
+    
+  }
 
 }
 
@@ -111,13 +134,20 @@ void loop(void)
 
   // Color picker for the NeoPixel Ring
   if(packetbuffer[1]== 'C') {
+    
     uint8_t red = packetbuffer[2];
     uint8_t green = packetbuffer[3];
     uint8_t blue = packetbuffer[4];
+    
     for(int i=0; i<NUMPIXELS;i++){
+      
       pixel.setPixelColor(i, pixel.Color(red,green,blue));
+      
+      pixel.show();
+
+      delay(50);
     }
-    pixel.show();
+    
   }  
 
   // Read from Accelerometer input
@@ -234,18 +264,47 @@ bool buttonMode(){
     // Buttons and their functions
     if (pressed) {
       isMoving = true;
+
+      while (autoMode) {
+
+        L_MOTOR->setSpeed(160);
+        R_MOTOR->setSpeed(160);
+        L_MOTOR->run(FORWARD);
+        R_MOTOR->run(FORWARD);
+
+        
+
+        while (digitalRead(rightSensor) == LOW) {
+
+          L_MOTOR->setSpeed(200);
+          R_MOTOR->setSpeed(200);
+          L_MOTOR->run(BACKWARD);
+          R_MOTOR->run(RELEASE);
+          
+        }
+
+        while (digitalRead(leftSensor) == LOW) {
+
+          L_MOTOR->setSpeed(200);
+          R_MOTOR->setSpeed(200);
+          L_MOTOR->run(RELEASE);
+          R_MOTOR->run(BACKWARD);
+          
+        }
+        
+      }
     
-    if (buttnum == 2){
-      int melody[] = {262, 196, 196, 220, 196, 0, 245, 262 };
-      int noteDurations[] = { 4,8,8,4,4,4,4,4 };
-      for (int thisNote=0; thisNote < 8; thisNote++){
-        int noteDuration = 1000 / noteDurations[thisNote];
-        tone(12, melody[thisNote], noteDuration);
-        int pauseBetweenNotes = noteDuration * 1.30;
-        delay(pauseBetweenNotes);
-        noTone(12); 
-       }
-     } 
+      if (buttnum == 2){
+        int melody[] = {262, 196, 196, 220, 196, 0, 245, 262 };
+        int noteDurations[] = { 4,8,8,4,4,4,4,4 };
+        for (int thisNote=0; thisNote < 8; thisNote++){
+          int noteDuration = 1000 / noteDurations[thisNote];
+          tone(12, melody[thisNote], noteDuration);
+          int pauseBetweenNotes = noteDuration * 1.30;
+          delay(pauseBetweenNotes);
+          noTone(12); 
+         }
+       } 
 
       // Up arrow
       if(buttnum == 5){
@@ -269,6 +328,15 @@ bool buttonMode(){
       if(buttnum == 8){
         L_MOTOR->run(FORWARD);
         R_MOTOR->run(RELEASE);        
+      }
+
+      
+      if (buttnum == 1 && autoMode == true) {
+        autoMode = false;
+      }
+
+      else if (buttnum == 1 && autoMode == false) {
+        autoMode = true;
       }
 
       lastPress = millis();
